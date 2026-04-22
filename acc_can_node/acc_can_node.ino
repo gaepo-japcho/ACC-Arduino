@@ -119,19 +119,25 @@ void loop() {
 
     /* ─────────────────────────────────────────────
        ④ 모터 노드 피드백 요청 → CAN 송신 (10ms)
+         - I2C 실패해도 0x400 프레임은 계속 송신 (spd=0)
+         - ECU 관점에서 "CAN 노드 살아있음" 확인 가능
+         - 실제 속도 신뢰도는 하트비트의 ERR_I2C 비트로 판단
        ───────────────────────────────────────────── */
     if ((now - g_t_feedback) >= PERIOD_FEEDBACK_MS) {
         g_t_feedback = now;
 
-        int16_t spd;
-        uint8_t motor_err;
+        int16_t spd = 0;
+        uint8_t motor_err = 0;
         if (i2c_request_feedback(&spd, &motor_err)) {
             g_err_flags &= ~ERR_I2C;
-            if (can_is_ok()) {
-                can_tx_feedback(spd);
-            }
         } else {
             g_err_flags |= ERR_I2C;
+            spd = 0;                 /* 안전 기본값 */
+        }
+
+        /* I2C 성공/실패 무관하게 피드백 프레임은 항상 송신 */
+        if (can_is_ok()) {
+            can_tx_feedback(spd);
         }
     }
 
