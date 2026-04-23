@@ -28,30 +28,43 @@
  */
 
 /* =========================================================
-   CAN ID 구성
-   ========================================================= */
-/*
- * ECU → 이 보드 (모터 명령)
- *   DLC 6
- *   Byte 0: 왼쪽 쌍 PWM 명령 (int8, -127~127)
- *   Byte 1: 오른쪽 쌍 PWM 명령 (int8, -127~127)
- *   Byte 2, 3: reserved
- *   Byte 4: Control (bit0=enable, bit2=brake)
- *   Byte 5: Checksum (XOR of byte 0~4)
- *
- * 이 보드 → ECU (속도 피드백)
- *   DLC 4
- *   Byte 0, 1: 엔코더 속도 (int16 big-endian, 0.1 cm/s)
- *   Byte 2, 3: reserved
- *
- * 이 보드 → ECU (Heartbeat)
- *   DLC 2
- *   Byte 0: 0xAA (생존 마커)
- *   Byte 1: 에러 플래그
+   CAN ID 구성  (ACC-CANDB/acc_db.dbc 정본)
+   =========================================================
+
+   ECU → 이 보드  MTR_CMD (0x210)  주기 10ms  DLC 4
+     Byte 0: SET_PWM_LF (int8, -128~127)   앞왼쪽
+     Byte 1: SET_PWM_RF (int8, -128~127)   앞오른쪽
+     Byte 2: SET_PWM_LR (int8, -128~127)   뒤왼쪽
+     Byte 3: SET_PWM_RR (int8, -128~127)   뒤오른쪽
+     NOTE: 이 보드의 모터 노드는 L/R 2-channel 구조 → can_handler 가
+           L_pair = avg(LF, LR), R_pair = avg(RF, RR) 로 adapter 매핑.
+
+   이 보드 → ECU  MTR_SPD_FB (0x300)  주기 10ms  DLC 8
+     Byte 0-1: GET_SPD_LF (int16 LE, factor 0.02 cm/s, ±650 cm/s)
+     Byte 2-3: GET_SPD_RF
+     Byte 4-5: GET_SPD_LR
+     Byte 6-7: GET_SPD_RR
+     NOTE: 실제 엔코더는 1개뿐 → 4채널에 같은 값 broadcast.
+           (DBC는 향후 4엔코더 확장 대비. TODO: 요구사항 논의)
+
+   이 보드 → ECU  MTR_HEARTBEAT (0x310)  주기 10ms  DLC 2  (SYS025)
+     Byte 0: HB_MTR (uint8, 0~255 순환)
+     Byte 1: ERR_MTR (uint8, 0=정상, 비트 플래그)
+
+   ECU → 이 보드  ECU_HEARTBEAT (0x410)  주기 10ms  DLC 2  (SAF018, ASIL-B)
+     Byte 0: HB_ECU
+     Byte 1: ERR_ECU
+     NOTE: 3주기(30ms) 연속 미수신 시 ECU 고장 판단 → 모터 정지.
  */
-#define CAN_ID_MOTOR_CMD     0x300   // 수신 ID
-#define CAN_ID_MOTOR_FB      0x400   // 송신 (피드백) ID
-#define CAN_ID_MOTOR_HB      0x410   // 송신 (하트비트) ID
+#define CAN_ID_MTR_CMD       0x210   // 수신 ID: ECU→MTR PWM 명령
+#define CAN_ID_MTR_SPD_FB    0x300   // 송신 ID: 4륜 속도 피드백
+#define CAN_ID_MTR_HEARTBEAT 0x310   // 송신 ID: 모터 노드 HB+ERR
+#define CAN_ID_ECU_HEARTBEAT 0x410   // 수신 ID: ECU HB 감시 (SAF018)
+
+/* 하위 호환 별칭 (can_handler.cpp 에서 기존 이름 참조 시) */
+#define CAN_ID_MOTOR_CMD     CAN_ID_MTR_CMD
+#define CAN_ID_MOTOR_FB      CAN_ID_MTR_SPD_FB
+#define CAN_ID_MOTOR_HB      CAN_ID_MTR_HEARTBEAT
 
 /* =========================================================
    I2C 설정 — 모터 노드와 통신
@@ -62,9 +75,10 @@
 /* =========================================================
    타이밍 (단위: ms)
    ========================================================= */
-#define PERIOD_FEEDBACK_MS     10    // 엔코더 피드백 CAN 송신 주기
-#define PERIOD_HEARTBEAT_MS    50    // 하트비트 CAN 송신 주기
-#define TIMEOUT_CMD_MS         30    // ECU 명령 타임아웃 (30ms 초과 → 모터 정지)
+#define PERIOD_FEEDBACK_MS     10    // 엔코더 피드백 CAN 송신 주기 (MTR_SPD_FB, SYS017)
+#define PERIOD_HEARTBEAT_MS    10    // 하트비트 CAN 송신 주기 (MTR_HEARTBEAT, SYS025)
+#define TIMEOUT_CMD_MS         30    // MTR_CMD 미수신 타임아웃 → 모터 정지 (SAF ASIL-B, 3주기)
+#define TIMEOUT_ECU_HB_MS      30    // ECU_HEARTBEAT 미수신 타임아웃 → FAULT (SAF018, 3주기)
 
 /* =========================================================
    에러 플래그 비트 정의
