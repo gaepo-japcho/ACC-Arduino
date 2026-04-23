@@ -53,7 +53,7 @@ Arduino #1 이 수신·송신하는 메시지. 상세 시그널 layout 은 DBC +
 | TX | `CAN_ID_MTR_HEARTBEAT` | **0x310** | 2 | 10 ms | HB_MTR + ERR_MTR | SYS025 |
 | RX | `CAN_ID_ECU_HEARTBEAT` | **0x410** | 2 | 10 ms | ECU 생존 감시 (3주기=30ms 미수신 → FAULT) | SAF018 (ASIL-B) |
 
-구 상수명(`CAN_ID_MOTOR_CMD/FB/HB`) 은 config.h 에 **#define 별칭으로만 유지** — 레거시 호출부가 재컴파일 시 자동 이전. 신규 코드는 `MTR_*` 형식 쓸 것.
+상수명은 DBC 메시지 이름에 맞춘 `MTR_*` / `ECU_*` 형식. 구 `CAN_ID_MOTOR_*` 별칭은 이미 제거되었다 — 신규·기존 코드 모두 `CAN_ID_MTR_*` / `CAN_ID_ECU_*` 를 쓸 것.
 
 ## DBC↔하드웨어 차원 (의도된 broadcast 어댑터)
 
