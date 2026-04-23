@@ -48,24 +48,26 @@ Arduino #1 이 수신·송신하는 메시지. 상세 시그널 layout 은 DBC +
 
 | 방향 | 상수 (config.h) | ID | DLC | 주기 | 용도 | 근거 |
 |---|---|---|---|---|---|---|
-| RX | `CAN_ID_MTR_CMD` | **0x210** | 4 | 10 ms | ECU → MTR PWM 명령 | SYS016 |
-| TX | `CAN_ID_MTR_SPD_FB` | **0x300** | 8 | 10 ms | 4륜 속도 피드백 | SYS017 |
+| RX | `CAN_ID_MTR_CMD` | **0x210** | 6 | 10 ms | ECU → MTR PWM 명령 (4×PWM + RC 4bit + CRC 8bit) | SYS016, SAF010 |
+| TX | `CAN_ID_MTR_SPD_FB` | **0x300** | 8 | 10 ms | 속도 피드백 (AVG int16×0.02 + 4륜 int12×0.3, cm/s) | SYS017, SYS019 |
 | TX | `CAN_ID_MTR_HEARTBEAT` | **0x310** | 2 | 10 ms | HB_MTR + ERR_MTR | SYS025 |
 | RX | `CAN_ID_ECU_HEARTBEAT` | **0x410** | 2 | 10 ms | ECU 생존 감시 (3주기=30ms 미수신 → FAULT) | SAF018 (ASIL-B) |
 
 구 상수명(`CAN_ID_MOTOR_CMD/FB/HB`) 은 config.h 에 **#define 별칭으로만 유지** — 레거시 호출부가 재컴파일 시 자동 이전. 신규 코드는 `MTR_*` 형식 쓸 것.
 
-## ⚠️ DBC↔하드웨어 차원 불일치 (미해결, 어댑터 필요)
+## DBC↔하드웨어 차원 (의도된 broadcast 어댑터)
 
-현재 CAN frame 포맷과 하드웨어 구조 사이에 **구조적 gap** 이 있어 `can_handler.cpp` 의 payload 파싱이 아직 DBC 정본과 정합 되지 않았다. 작업 전 반드시 읽을 것.
+DBC 는 4륜 독립 PWM/엔코더를 가정한 **확장 가능 설계**다 (SYS016/017). 현 하드웨어는 핀 충돌 — D10~D13 을 CAN 쉴드 SPI 와 Motor Shield R3 가 동시에 요구 — 때문에 **CAN 게이트웨이 + 모터 노드 분리** 구조 + **모터쉴드 2채널(L/R pair) + 엔코더 1개** 로 운용한다. 따라서 `acc_can_node/can_handler.cpp` 는 DBC 4륜 시그널을 좌/우 2채널로 축소·broadcast 하는 **어댑터 역할이며, 이는 의도된 운영 모드**다 (확장 시 어댑터만 교체, DBC/요구사항 불변).
 
-| 항목 | DBC 정본 | 하드웨어 실제 | 어댑터 필요 지점 |
+| 항목 | DBC 정본 (v3.1) | 하드웨어 실제 | 어댑터 동작 |
 |---|---|---|---|
-| `MTR_CMD` RX | DLC 4, `SET_PWM_LF/RF/LR/RR` 4×int8 | 모터 2 채널 (L pair / R pair) | `can_handler.cpp::can_get_cmd` — DBC 4 PWM 수신 → `L=avg(LF,LR)`, `R=avg(RF,RR)` 로 축소 후 I2C 전달 |
-| `MTR_SPD_FB` TX | DLC 8, `GET_SPD_LF/RF/LR/RR` 4×int16 @ 0.02 cm/s | 엔코더 1개 (단일 축 속도) | `can_handler.cpp::can_tx_feedback` — 동일 값을 4채널 broadcast, factor 0.02 cm/s 준수 |
-| ctrl/checksum | DBC 에 없음 (제거됨) | 현 `can_handler.cpp` 는 `ctrl_byte(B4)` + `XOR checksum(B5)` 를 기대 (구 DLC 6 포맷) | **DLC 4 포맷으로 재작성 필요** — enable/brake 는 ECU 의 AccStateMachine 에서 PWM=0 으로 표현됨, checksum 은 DBC E2E 프레임워크가 따로 다룸 (현재 MTR_CMD 에는 미적용) |
+| `MTR_CMD` RX | DLC 6: `SET_PWM_LF/RF/LR/RR` 4×int8 + `MTR_RC` 4bit + `MTR_CRC` 8bit | 모터 2 채널 (L pair / R pair) | `can_get_cmd` — 4 PWM 수신 → `L=avg(LF,LR)`, `R=avg(RF,RR)` 축소 후 I2C 전달. RC/CRC 는 현재 무시 (아래 TODO 참조) |
+| `MTR_SPD_FB` TX | DLC 8: `GET_SPD_AVG` int16×0.02 cm/s + `GET_SPD_LF/RF/LR/RR` 4×int12×0.3 cm/s | 엔코더 1개 (단일 축 속도) | `can_tx_feedback` — 단일 측정값을 AVG 와 4륜 모두에 동일하게 broadcast (각 시그널 factor 차이만 적용) |
+| `MTR_CMD` E2E (RC/CRC) | DBC 에 자리 예약, AUTOSAR P01 (poly 0x2F) 명세 | 미구현 | **TODO**: 송신측은 0 채움, 수신측은 검증 skip. SAF010 ASIL-B 적용은 후속 작업 — 현재 safe-state 는 30 ms 타임아웃(SWR018) 단일 의존 |
 
-→ **TODO**: `can_handler.cpp` 를 DBC 정본 (DLC 4, L/R 어댑터 매핑) 으로 재작성. 팀 결정에 따라 DBC 를 2채널(`SET_PWM_L/R`) 로 축소하는 대안도 가능 — 요구사항 SYS016 개정이 동반된다.
+→ **TODO**:
+1. `can_handler.cpp` 를 DBC v3 정본(DLC 6, L/R 어댑터 매핑) 으로 재작성. RC/CRC 자리는 송신 0 / 수신 skip 으로 일단 고정.
+2. SAF010 본격 적용 시 RC/CRC 송수신·검증 로직 추가 (ECU `MotorControl`/`CanCommunication` SWC + Arduino `can_handler` 양측). polynomial/byte image 명세는 DBC 의 `MTR_CRC` 코멘트 참조.
 
 ## ASIL-B 세이프티 타이머 (30 ms command timeout)
 
@@ -139,7 +141,7 @@ Arduino IDE 전용. PlatformIO 설정 없음.
 - **공통 파일 아님** — 과거 "front/rear sibling sketch" 패턴은 더 이상 존재하지 않는다. 각 보드는 별개 코드베이스. 로직을 복제하지 말고 I2C 로 책임 분리 유지.
 - **30 ms command timeout** / ECU HB 모니터링 / I2C 200 ms 타임아웃은 다층 방어. safety 명목 외로 건드리지 말 것. 근거: `../ACC-docs/reqs/STK/SYS/SAF.sdoc` (SAF018 외).
 - **CAN ID / 주기는 DBC 정본** — `config.h` 상수 바꾸기 전에 `../ACC-CANDB/acc_db.dbc` 와 `../ACC-docs/reqs/STK/SYS.sdoc` (SYS016/017/025, SAF018) 양쪽 확인.
-- **DLC 4 vs 6 포맷** — 위 "DBC↔하드웨어 차원 불일치" 표의 adapter 작업 완료 전에는 `can_handler.cpp` 가 ECU 로부터 DBC 정본 프레임을 받으면 `len >= 5` 검증에서 통과하지만 체크섬 검증이 깨지거나 ctrl_byte 가 랜덤해질 수 있음. 실기 테스트 전 먼저 고칠 것.
+- **DLC 6 정본 + E2E 자리 예약** — DBC v3.1 의 `MTR_CMD` 는 DLC 6 (4 PWM + 4bit RC + padding + 8bit CRC). 어댑터 작업 완료 전 구 DLC 4 로직(`ctrl_byte`/`XOR checksum`)이 남아 있으면 frame 길이 검증·payload offset 이 어긋난다. 위 "DBC↔하드웨어 차원" 표 기준으로 재작성할 것. RC/CRC 는 현재 의도적으로 미구현 — 송신 0 채움, 수신 skip (TODO 1·2 참조).
 - **DFRobot_MCP2515** vs **mcp_can** — 혼동 주의. 이 프로젝트는 DFRobot 쉴드라 `DFRobot_MCP2515.h` 사용. Library Manager 검색 시 "MCP_CAN" 하나만 나오면 안 됨.
 - **한국어 주석 유지** — 기존 코드·헤더가 전부 한국어. 번역하지 말 것.
 
