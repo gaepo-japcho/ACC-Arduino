@@ -31,40 +31,44 @@
    CAN ID 구성  (ACC-CANDB/acc_db.dbc 정본)
    =========================================================
 
-   ECU → 이 보드  MTR_CMD (0x210)  주기 10ms  DLC 4
+   ECU → 이 보드  MTR_CMD (0x210)  주기 10ms  DLC 6  (E2E P01, SAF010 ASIL-B)
      Byte 0: SET_PWM_LF (int8, -128~127)   앞왼쪽
      Byte 1: SET_PWM_RF (int8, -128~127)   앞오른쪽
      Byte 2: SET_PWM_LR (int8, -128~127)   뒤왼쪽
      Byte 3: SET_PWM_RR (int8, -128~127)   뒤오른쪽
-     NOTE: 이 보드의 모터 노드는 L/R 2-channel 구조 → can_handler 가
-           L_pair = avg(LF, LR), R_pair = avg(RF, RR) 로 adapter 매핑.
+     Byte 4 (low nibble): MTR_RC  (Rolling Counter 4bit, 0~15 순환)
+     Byte 5:              MTR_CRC (CRC-8 over Byte 0..4, poly 0x07)
+     NOTE:
+       - E2E 검증 실패(CRC 또는 RC 순서 위반) 시 명령 무효 처리 → 30ms 타임
+         아웃 로직(SAF010/SWR018)에 의해 자동 모터 정지로 진입.
+       - 이 보드의 모터 노드는 L/R 2-channel 구조 → can_handler 가
+         L_pair = avg(LF, LR), R_pair = avg(RF, RR) 로 adapter 매핑.
 
-   이 보드 → ECU  MTR_SPD_FB (0x300)  주기 10ms  DLC 8
-     Byte 0-1: GET_SPD_LF (int16 LE, factor 0.02 cm/s, ±650 cm/s)
-     Byte 2-3: GET_SPD_RF
-     Byte 4-5: GET_SPD_LR
-     Byte 6-7: GET_SPD_RR
-     NOTE: 실제 엔코더는 1개뿐 → 4채널에 같은 값 broadcast.
-           (DBC는 향후 4엔코더 확장 대비. TODO: 요구사항 논의)
+   이 보드 → ECU,SENSOR  MTR_SPD_FB (0x300)  주기 10ms  DLC 8  (signal-level multicast)
+     Byte 0-1: GET_SPD_AVG (int16 LE, factor 0.02 cm/s, ±650 cm/s) — ECU+SENSOR
+     Byte 2~7: GET_SPD_LF/RF/LR/RR (int12 × 4개, factor 0.3 cm/s, ±614 cm/s) — ECU only
+         비트 레이아웃 (Intel LE):
+           LF  : bit 16-27 → Byte 2 + Byte 3 [3:0]
+           RF  : bit 28-39 → Byte 3 [7:4] + Byte 4
+           LR  : bit 40-51 → Byte 5 + Byte 6 [3:0]
+           RR  : bit 52-63 → Byte 6 [7:4] + Byte 7
+     NOTE:
+       - AVG 는 HMI 고정밀 표시용 (factor 0.02), 4륜은 PID 제어 입력 (factor 0.3).
+       - 실제 엔코더는 1개뿐 → AVG 와 4륜 모두 같은 속도값을 scale 만 달리 broadcast.
+         다중 엔코더 확장 시 이 보드에서 실제 평균 연산 수행.
 
    이 보드 → ECU  MTR_HEARTBEAT (0x310)  주기 10ms  DLC 2  (SYS025)
      Byte 0: HB_MTR (uint8, 0~255 순환)
-     Byte 1: ERR_MTR (uint8, 0=정상, 비트 플래그)
+     Byte 1: ERR_MTR (uint8, 0=정상, 비트 플래그 — ERR_* 상수 참조)
 
    ECU → 이 보드  ECU_HEARTBEAT (0x410)  주기 10ms  DLC 2  (SAF018, ASIL-B)
-     Byte 0: HB_ECU
-     Byte 1: ERR_ECU
+     Byte 0: HB_ECU, Byte 1: ERR_ECU
      NOTE: 3주기(30ms) 연속 미수신 시 ECU 고장 판단 → 모터 정지.
  */
-#define CAN_ID_MTR_CMD       0x210   // 수신 ID: ECU→MTR PWM 명령
-#define CAN_ID_MTR_SPD_FB    0x300   // 송신 ID: 4륜 속도 피드백
+#define CAN_ID_MTR_CMD       0x210   // 수신 ID: ECU→MTR PWM 명령 (DLC 6, E2E P01)
+#define CAN_ID_MTR_SPD_FB    0x300   // 송신 ID: AVG + 4륜 속도 피드백 (DLC 8)
 #define CAN_ID_MTR_HEARTBEAT 0x310   // 송신 ID: 모터 노드 HB+ERR
 #define CAN_ID_ECU_HEARTBEAT 0x410   // 수신 ID: ECU HB 감시 (SAF018)
-
-/* 하위 호환 별칭 (can_handler.cpp 에서 기존 이름 참조 시) */
-#define CAN_ID_MOTOR_CMD     CAN_ID_MTR_CMD
-#define CAN_ID_MOTOR_FB      CAN_ID_MTR_SPD_FB
-#define CAN_ID_MOTOR_HB      CAN_ID_MTR_HEARTBEAT
 
 /* =========================================================
    I2C 설정 — 모터 노드와 통신
@@ -81,9 +85,10 @@
 #define TIMEOUT_ECU_HB_MS      30    // ECU_HEARTBEAT 미수신 타임아웃 → FAULT (SAF018, 3주기)
 
 /* =========================================================
-   에러 플래그 비트 정의
+   에러 플래그 비트 정의 (ERR_MTR 시그널에 인코딩)
    ========================================================= */
-#define ERR_CAN        0x01    // bit0: CAN 통신 오류
-#define ERR_TIMEOUT    0x02    // bit1: ECU 명령 타임아웃
-#define ERR_CHECKSUM   0x04    // bit2: CAN 체크섬 오류
-#define ERR_I2C        0x08    // bit3: 모터 노드 I2C 오류
+#define ERR_CAN        0x01    // bit0: CAN 통신 초기화/하드웨어 오류
+#define ERR_TIMEOUT    0x02    // bit1: MTR_CMD 30ms 타임아웃 (SAF010)
+#define ERR_E2E        0x04    // bit2: MTR_CMD E2E 검증 실패 (CRC/RC)
+#define ERR_I2C        0x08    // bit3: 모터 노드 I2C 통신 오류
+#define ERR_ECU_HB     0x10    // bit4: ECU_HEARTBEAT 30ms 타임아웃 (SAF018)
