@@ -65,7 +65,7 @@
      Byte 0: HB_ECU, Byte 1: ERR_ECU
      NOTE: 3주기(30ms) 연속 미수신 시 ECU 고장 판단 → 모터 정지.
 
-   ※ DBC v3.x 이후 ID 변경 (Project.dbc 충돌/NM 예약범위 회피):
+   ※ DBC v3.x 이후 ID 변경 (Project.dbc 충돌 + NM 예약범위 회피):
        MTR_SPD_FB    : 0x300 → 0x310
        MTR_HEARTBEAT : 0x310 → 0x320
        ECU_HEARTBEAT : 0x410 → 0x480
@@ -85,4 +85,15 @@
    타이밍 (단위: ms)
    ========================================================= */
 #define PERIOD_FEEDBACK_MS     10    // 엔코더 피드백 CAN 송신 주기 (MTR_SPD_FB, SYS017)
-#define PERIOD_HEARTBEAT_MS    10    // 하트비트 CAN 송신 주기 (MTR_HEARTBEAT
+#define PERIOD_HEARTBEAT_MS    10    // 하트비트 CAN 송신 주기 (MTR_HEARTBEAT, SYS025)
+#define TIMEOUT_CMD_MS         30    // MTR_CMD 미수신 타임아웃 → 모터 정지 (SAF ASIL-B, 3주기)
+#define TIMEOUT_ECU_HB_MS      30    // ECU_HEARTBEAT 미수신 타임아웃 → FAULT (SAF018, 3주기)
+
+/* =========================================================
+   에러 플래그 비트 정의 (ERR_MTR 시그널에 인코딩)
+   ========================================================= */
+#define ERR_CAN        0x01    // bit0: CAN 통신 초기화/하드웨어 오류
+#define ERR_TIMEOUT    0x02    // bit1: MTR_CMD 30ms 타임아웃 (SAF010)
+#define ERR_E2E        0x04    // bit2: MTR_CMD E2E 검증 실패 (CRC/RC)
+#define ERR_I2C        0x08    // bit3: 모터 노드 I2C 통신 오류
+#define ERR_ECU_HB     0x10    // bit4: ECU_HEARTBEAT 30ms 타임아웃 (SAF018)

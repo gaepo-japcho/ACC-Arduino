@@ -136,4 +136,78 @@ Byte 1: ERR_ECU   (uint8) 0=Normal, ≠0=Error code
 
 Arduino #1 ↔ Arduino #2 통신. 슬레이브 주소 `0x10`, 100kHz.
 
-### Ma
+### Master → Slave (쓰기, 3바이트)
+```
+Byte 0: cmd_l (int8)
+Byte 1: cmd_r (int8)
+Byte 2: ctrl  (bit0=enable, bit2=brake)
+```
+
+### Slave → Master (읽기, 3바이트)
+```
+Byte 0: spd LSB  (int16 little-endian)
+Byte 1: spd MSB
+Byte 2: err_flags
+```
+
+## 필요한 라이브러리 (Arduino IDE)
+
+### Arduino #1 (acc_can_node)
+- **DFRobot_MCP2515** — CAN BUS Shield 드라이버 (Library Manager에서 설치)
+- **Wire** — I2C (내장)
+- **SPI** — (내장)
+
+### Arduino #2 (acc_motor_node)
+- **Wire** — I2C (내장)
+
+## 빌드 & 업로드
+
+1. Arduino IDE에서 `acc_can_node/acc_can_node.ino` 열기
+2. 보드: Arduino Uno 선택
+3. 해당 Arduino #1 포트 선택 → 업로드
+4. 새 창에서 `acc_motor_node/acc_motor_node.ino` 열기
+5. Arduino #2 포트 선택 → 업로드
+
+## 테스트 절차
+
+### 단계 1: Arduino #2 단독 모터 테스트
+- `acc_motor_node.ino` 맨 아래 loop() 직전에 임시로 삽입:
+  ```cpp
+  // 테스트: 3초 후 전진 시작
+  if (millis() > 3000 && g_cmd_l == 0) {
+      g_cmd_l = 80;  g_cmd_r = 80;  g_ctrl = 0x01;
+      g_t_last_cmd = millis();
+  }
+  ```
+- 모터 4개가 차체 기준 앞으로 구르는지 확인
+- 반대로 도는 모터가 있으면 해당 모터 전선 2가닥 바꿔 꽂기
+- 완료 후 위 코드 제거
+
+### 단계 2: Arduino #1 단독 CAN 테스트
+- PCAN-View에서 `0x210 MTR_CMD` 에 `50 50 50 50 00 CRC` 송신
+  - 4륜 모두 80 PWM (LF/RF/LR/RR = 0x50). MTR_RC = 0 (low nibble), CRC-8/AUTOSAR 결과 대입.
+  - 어댑터 동작 확인: `cmd_l = avg(LF, LR) = 80`, `cmd_r = avg(RF, RR) = 80`.
+- 또한 `0x480 ECU_HEARTBEAT` 를 10ms 주기로 송신해 줘야 Arduino #1 이 ECU 생존을 인식한다 (없으면 30ms 후 타임아웃 → 모터 정지 + `ERR_ECU_HB` set).
+- 시리얼 모니터에 CAN 수신 로그 확인
+- I2C 에러(`ERR_I2C` 비트 set)가 떠도 OK (Arduino #2 아직 연결 안 했으면)
+
+### 단계 3: I2C 통합 테스트
+- A4-A4, A5-A5, GND-GND 연결
+- PCAN 에서 `0x210 MTR_CMD` + `0x480 ECU_HEARTBEAT` 동시 송신
+- Arduino #2의 모터 움직이는지 확인
+- PCAN 수신창에서 `0x310 MTR_SPD_FB` 피드백, `0x320 MTR_HEARTBEAT` 들어오는지 확인
+
+### 단계 4: ECU 연결 + 실제 주행
+
+## 엔코더 PPR 측정
+
+`acc_motor_node/encoder.cpp` 에서 `DEBUG_ENCODER` 를 `1` 로 변경 후 업로드.
+시리얼 모니터(115200) 열고 엔코더가 달린 모터를 **정확히 1바퀴** 돌린 뒤
+`total` 출력값을 `config.h` 의 `ENCODER_PPR` 에 대입. 끝나면 `DEBUG_ENCODER` 0으로 복구.
+
+## 주의사항
+
+- **공통 GND 필수**: Arduino #1 GND / #2 GND / 배터리 GND / ECU GND / 엔코더 GND 전부 연결
+- **모터 전원 분리**: 모터 배터리는 절대 아두이노 USB 포트 쓰지 말 것
+- **CAN 종단 저항**: 버스 양 끝단에 120Ω. CAN BUS Shield J1 점퍼 ON 상태 확인
+- **모터 쉴드 스택 시 전류 센싱(A0/A1)은 부정확**하므로 사용하지 않음
