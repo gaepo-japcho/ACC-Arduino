@@ -61,7 +61,7 @@
  * PPR: 모터 1회전당 엔코더 펄스 수 (CHANGE 트리거 기준)
  * 측정법: encoder.cpp의 DEBUG_ENCODER=1로 바꾸고 모터를 1바퀴 돌려 count 값 확인
  */
-#define ENCODER_PPR     20      // ← 실측 후 수정
+#define ENCODER_PPR     140      // ← 실측 후 수정함
 
 /*
  * 바퀴 둘레 (mm) = π × 직경
