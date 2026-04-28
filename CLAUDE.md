@@ -49,9 +49,9 @@ Arduino #1 이 수신·송신하는 메시지. 상세 시그널 layout 은 DBC +
 | 방향 | 상수 (config.h) | ID | DLC | 주기 | 용도 | 근거 |
 |---|---|---|---|---|---|---|
 | RX | `CAN_ID_MTR_CMD` | **0x210** | 6 | 10 ms | ECU → MTR PWM 명령 (4×PWM + RC 4bit + CRC 8bit) | SYS016, SAF010 |
-| TX | `CAN_ID_MTR_SPD_FB` | **0x300** | 8 | 10 ms | 속도 피드백 (AVG int16×0.02 + 4륜 int12×0.3, cm/s) | SYS017, SYS019 |
-| TX | `CAN_ID_MTR_HEARTBEAT` | **0x310** | 2 | 10 ms | HB_MTR + ERR_MTR | SYS025 |
-| RX | `CAN_ID_ECU_HEARTBEAT` | **0x410** | 2 | 10 ms | ECU 생존 감시 (3주기=30ms 미수신 → FAULT) | SAF018 (ASIL-B) |
+| TX | `CAN_ID_MTR_SPD_FB` | **0x310** | 8 | 10 ms | 속도 피드백 (AVG int16×0.02 + 4륜 int12×0.3, cm/s) | SYS017, SYS019 |
+| TX | `CAN_ID_MTR_HEARTBEAT` | **0x320** | 2 | 10 ms | HB_MTR + ERR_MTR | SYS025 |
+| RX | `CAN_ID_ECU_HEARTBEAT` | **0x480** | 2 | 10 ms | ECU 생존 감시 (3주기=30ms 미수신 → FAULT) | SAF018 (ASIL-B) |
 
 상수명은 DBC 메시지 이름에 맞춘 `MTR_*` / `ECU_*` 형식. 구 `CAN_ID_MOTOR_*` 별칭은 이미 제거되었다 — 신규·기존 코드 모두 `CAN_ID_MTR_*` / `CAN_ID_ECU_*` 를 쓸 것.
 

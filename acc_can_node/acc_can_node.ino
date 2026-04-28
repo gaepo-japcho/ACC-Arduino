@@ -8,14 +8,14 @@
  *   A4/A5 핀을 점퍼선으로 모터 노드의 A4/A5와 연결
  *   양 보드의 GND 공통 연결 필수
  *
- * 흐름 (DBC: ACC-CANDB/acc_db.dbc):
- *   1) CAN 폴링 (MTR_CMD 0x210 + ECU_HEARTBEAT 0x410)
- *   2) MTR_CMD 수신 시 E2E P01 (Rolling Counter + CRC-8) 검증 후
+ * 흐름 (DBC: ACC-CANDB/acc_db.dbc, v3.x):
+ *   1) CAN 폴링 (MTR_CMD 0x210 + ECU_HEARTBEAT 0x480)
+ *   2) MTR_CMD 수신 시 E2E P01 (Rolling Counter + CRC-8/AUTOSAR) 검증 후
  *      4채널 → L/R pair 어댑터 → I2C 로 모터 노드에 전달
  *   3) 모터 노드의 엔코더 속도 / 에러 플래그 주기적 요청 (I2C)
- *   4) MTR_SPD_FB (0x300) + MTR_HEARTBEAT (0x310) CAN 송신
- *   5) MTR_CMD 30ms 미수신 → 모터 정지 강제 (SAF010)
- *   6) ECU_HEARTBEAT 30ms 미수신 → ERR_ECU_HB 플래그 (SAF018)
+ *   4) MTR_SPD_FB (0x310) + MTR_HEARTBEAT (0x320) CAN 송신
+ *   5) MTR_CMD 30ms 미수신 → 모터 정지 강제 (SAF010 ASIL-B)
+ *   6) ECU_HEARTBEAT 30ms 미수신 → ERR_ECU_HB 플래그 (SAF018 ASIL-B)
  */
 
 #include <Arduino.h>

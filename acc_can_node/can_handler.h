@@ -18,18 +18,18 @@
  *   RX  MTR_CMD       (0x210, DLC 6, 10ms) — E2E P01 (SAF010 ASIL-B)
  *       Byte 0..3: SET_PWM_LF/RF/LR/RR (int8)
  *       Byte 4 [3:0]: MTR_RC  (Rolling Counter, 0~15 순환)
- *       Byte 5      : MTR_CRC (CRC-8 over Byte 0..4, poly 0x07 CCITT)
+ *       Byte 5      : MTR_CRC (CRC-8/AUTOSAR over Byte 0..4, poly 0x2F, init 0xFF)
  *     → 4채널 → L/R pair 어댑터: L = avg(LF, LR), R = avg(RF, RR)
  *
- *   RX  ECU_HEARTBEAT (0x410, DLC 2, 10ms) — SAF018 ASIL-B
+ *   RX  ECU_HEARTBEAT (0x480, DLC 2, 10ms) — SAF018 ASIL-B
  *       Byte 0: HB_ECU, Byte 1: ERR_ECU
  *
- *   TX  MTR_SPD_FB    (0x300, DLC 8, 10ms) — signal-level multicast
+ *   TX  MTR_SPD_FB    (0x310, DLC 8, 10ms) — signal-level multicast
  *       Byte 0-1: GET_SPD_AVG (int16, factor 0.02 cm/s)
  *       Byte 2-7: GET_SPD_LF/RF/LR/RR (int12 × 4, factor 0.3 cm/s, bit-packed)
  *     엔코더 1개 → AVG 와 4륜 값 모두 같은 측정치를 scale 변환만 달리 인코딩.
  *
- *   TX  MTR_HEARTBEAT (0x310, DLC 2, 10ms)
+ *   TX  MTR_HEARTBEAT (0x320, DLC 2, 10ms)
  *       Byte 0: HB_MTR  (순환 카운터, can_handler 내부 자동 증가)
  *       Byte 1: ERR_MTR (ERR_* 비트 플래그)
  */
