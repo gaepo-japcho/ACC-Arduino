@@ -41,12 +41,15 @@ void encoder_calc(int8_t cmd) {
 
     /*
      * 속도 계산 — uint32 연산으로 오버플로 방지
-     *   cnt(최대 ~수백) × WHEEL_CIRC_MM(~204) × 1000 = 수천만 → uint32 안전
+     *   cnt(최대 ~수백) × WHEEL_CIRC_MM(~204) × 100 = 수백만 → uint32 안전
+     *
+     *   ENCODER_PPR 은 CHANGE 트리거 기준 1회전당 펄스 수이므로
+     *   분모는 PPR 그대로 (×2 보정 불필요). config.h 의 측정법과 정합.
      */
     uint32_t spd_u = (uint32_t)cnt
                    * (uint32_t)WHEEL_CIRC_MM
-                   * 1000UL
-                   / ((uint32_t)ENCODER_PPR * 2UL);
+                   * 100UL
+                   / (uint32_t)ENCODER_PPR;
 
     if (spd_u > 32767UL) spd_u = 32767UL;
     _spd = (cmd >= 0) ? (int16_t)spd_u : -(int16_t)spd_u;

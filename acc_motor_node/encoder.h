@@ -10,10 +10,11 @@
  * D2(INT0) 하드웨어 인터럽트 사용.
  *
  * 속도 공식:
- *   spd(0.1 cm/s) = count × WHEEL_CIRC_MM × 1000 / (ENCODER_PPR × 2)
+ *   spd(0.1 cm/s) = count × WHEEL_CIRC_MM × 100 / ENCODER_PPR
  *
- *   CHANGE 트리거 = 상승+하강 둘 다 카운트 → ÷2 보정
- *   ×1000 = (10ms 주기 → 1초 환산)×100 × (mm→0.1cm)×10
+ *   ENCODER_PPR 은 CHANGE 트리거 기준 1회전당 펄스 수 (config.h 측정법 참조).
+ *   따라서 식의 분모는 PPR 그대로 — ×2 보정 불필요.
+ *   ×100 = 10ms 주기 → 1초 환산. (mm/s 와 0.1 cm/s 는 수치가 동일하므로 단위 변환 추가 계수 없음.)
  *
  * 부호:
  *   cmd(명령) >= 0 → 속도 양수 (전진)
