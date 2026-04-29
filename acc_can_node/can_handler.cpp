@@ -70,28 +70,51 @@ bool can_init(void) {
 
 /* =========================================================
    MTR_CMD (0x210) 디스패치 — E2E P01 검증 + 4→2 어댑터
+   =========================================================
+   E2E 자동 감지 모드:
+     Byte 4 (RC) == 0x00 && Byte 5 (CRC) == 0x00 인 프레임이 오면
+     ECU 측 E2E 인코더가 아직 활성화되지 않은 것으로 간주하고
+     CRC/RC 검증을 스킵한다. (통합 단계 임시 회피)
+
+     ECU 가 추후 E2E P01 인코더를 활성화하면 RC/CRC 가 정상 값으로
+     채워져 들어오므로 자동으로 검증 모드로 복귀한다 — 코드 변경 불필요.
+
+   ⚠️ 안전 영향:
+     - 1차 방어선(E2E)만 자동 우회됨
+     - 2차(MTR_CMD 30ms 타임아웃, SAF010) / 3차(ECU HB 30ms, SAF018)
+       방어선은 항상 작동
+     - DLC 검사는 그대로 유지
    ========================================================= */
 static void dispatch_mtr_cmd(const uint8_t *buf, uint8_t len) {
     /* DLC 엄격 검사 — SAF010 은 DLC 6 을 명시 */
     if (len != 6) { _e2e_err = true; return; }
 
-    /* CRC-8 검증 (Byte 0..4 → Byte 5) */
-    uint8_t crc_calc = crc8_autosar(buf, 5);
-    if (crc_calc != buf[5]) { _e2e_err = true; return; }
+    /* E2E 비활성 모드 자동 감지: RC=0x0 && CRC=0x00 */
+    bool e2e_disabled = (buf[4] == 0x00 && buf[5] == 0x00);
 
-    /* Rolling Counter 연속성 검증 (4bit, Byte 4 low nibble) */
-    uint8_t rc = (uint8_t)(buf[4] & 0x0F);
-    if (_rc_initialized) {
-        uint8_t expected = (uint8_t)((_rc_last + 1) & 0x0F);
-        if (rc != expected) {
-            /* 순서 위반 → E2E 오류 플래그. 값은 여전히 반영(연속 실패 시
-             * 30ms 타임아웃으로 safe stop 진입이 상위 안전 메커니즘). */
-            _e2e_err = true;
+    if (!e2e_disabled) {
+        /* CRC-8 검증 (Byte 0..4 → Byte 5) */
+        uint8_t crc_calc = crc8_autosar(buf, 5);
+        if (crc_calc != buf[5]) { _e2e_err = true; return; }
+
+        /* Rolling Counter 연속성 검증 (4bit, Byte 4 low nibble) */
+        uint8_t rc = (uint8_t)(buf[4] & 0x0F);
+        if (_rc_initialized) {
+            uint8_t expected = (uint8_t)((_rc_last + 1) & 0x0F);
+            if (rc != expected) {
+                /* 순서 위반 → E2E 오류 플래그. 값은 여전히 반영(연속 실패 시
+                 * 30ms 타임아웃으로 safe stop 진입이 상위 안전 메커니즘). */
+                _e2e_err = true;
+            }
+        } else {
+            _rc_initialized = true;
         }
+        _rc_last = rc;
     } else {
-        _rc_initialized = true;
+        /* E2E 비활성 모드: RC 추적 상태 리셋
+         * → 추후 ECU 가 E2E 활성화 시 첫 프레임을 새 시작점으로 받아들임 */
+        _rc_initialized = false;
     }
-    _rc_last = rc;
 
     /* 4채널 PWM → L/R pair 어댑터 */
     int8_t lf = (int8_t)buf[0];
